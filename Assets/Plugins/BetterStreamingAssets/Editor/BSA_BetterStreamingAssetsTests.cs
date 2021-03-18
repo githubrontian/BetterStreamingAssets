@@ -20,7 +20,7 @@ namespace Better.StreamingAssets
         private const int TexturesCount = 2;
         private const int BundlesTypesCount = 3;
 
-        private const string TestDirName = "BSATest";
+        private const string TestDirName = "bsatest";
         private const string TestPath = "Assets/StreamingAssets/" + TestDirName;
         private const string TestResourcesPath = "Assets/Resources/" + TestDirName;
         private const int TestFiles = SizesCount * 2 + SizesCount * 2 * BundlesTypesCount + TexturesCount * BundlesTypesCount + TexturesCount;
@@ -48,10 +48,10 @@ namespace Better.StreamingAssets
                 long mb = 1024 * 1024;
                 foreach ( var size in SizesMB )
                 {
-                    var p = "Assets/raw_compressable_" + size.ToString("00") + "MB.bytes";
+                    var p = "Assets/raw_compressable_" + size.ToString("00") + "mb.bytes";
                     paths.Add(p);
                     CreateZeroFile(p, size * mb);
-                    p = "Assets/raw_uncompressable_" + size.ToString("00") + "MB.bytes";
+                    p = "Assets/raw_uncompressable_" + size.ToString("00") + "mb.bytes";
                     paths.Add(p);
                     CreateRandomFile(p, size * mb, random);
                 }
@@ -68,7 +68,6 @@ namespace Better.StreamingAssets
                     var tex = new Texture2D(2048, 2048, TextureFormat.RGBA32, true);
 
                     var pixels = tex.GetPixels32();
-                    float scale = 1.0f;
 
                     byte[] buffer = new byte[4];
 
@@ -341,7 +340,8 @@ namespace Better.StreamingAssets
 
         private static string[] GetRealFiles(string nested, string pattern, SearchOption so, bool dirs = false)
         {
-            var dir = "Assets/StreamingAssets/" + nested + "/";
+            var saDir = Path.GetFullPath("Assets/StreamingAssets/");
+            var dir = Path.GetFullPath(saDir + nested);
 
             if (!Directory.Exists(dir))
                 Assert.Inconclusive("Directory " + dir + " doesn't exist");
@@ -360,7 +360,7 @@ namespace Better.StreamingAssets
                     .ToList();
             }
 
-            var processedFiles = files.Select(x => x.Replace("Assets/StreamingAssets/", string.Empty).Replace("\\", "/"))
+            var processedFiles = files.Select(x => x.Replace(saDir, string.Empty).Replace("\\", "/"))
                 .ToArray();
 
             return processedFiles;

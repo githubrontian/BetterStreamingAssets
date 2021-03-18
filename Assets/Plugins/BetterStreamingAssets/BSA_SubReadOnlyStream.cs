@@ -54,7 +54,7 @@ namespace Better.StreamingAssets
                 if (!m_length.HasValue)
                     m_length = m_actualStream.Length - m_offset;
                 
-                return m_length.Value; ;
+                return m_length.Value;
             }
         }
 
@@ -68,7 +68,7 @@ namespace Better.StreamingAssets
             set
             {
                 ThrowIfDisposed();
-                throw new NotSupportedException();
+                m_position = m_offset + value;
             }
         }
 
@@ -110,13 +110,13 @@ namespace Better.StreamingAssets
             }
             else if ( origin == SeekOrigin.End )
             {
-                m_position = m_actualStream.Seek(m_offset + Length + offset, SeekOrigin.End);
+                m_position = m_actualStream.Seek(m_offset + Length + offset, SeekOrigin.Begin);
             }
             else
             {
                 m_position = m_actualStream.Seek(offset, SeekOrigin.Current);
             }
-            return m_position;
+            return m_position - m_offset;
         }
 
         public override void SetLength(long value)

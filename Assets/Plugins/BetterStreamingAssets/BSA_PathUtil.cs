@@ -81,7 +81,7 @@ namespace Better.StreamingAssets
 
             for ( int i = startIndex; i <= lastIndexPlus1; ++i )
             {
-                if (i == lastIndexPlus1 || relative[i] == Path.DirectorySeparatorChar || relative[i] == Path.AltDirectorySeparatorChar)
+                if (i == lastIndexPlus1 || relative[i] == '/' || relative[i] == '\\')
                 {
                     if ( state == NormalizeState.PrevSlash || state == NormalizeState.PrevDot )
                     {
@@ -90,7 +90,7 @@ namespace Better.StreamingAssets
                     else if ( state == NormalizeState.PrevDoubleDot )
                     {
                         if ( output.Length == 1 )
-                            throw new System.IO.IOException("AAA");
+                            throw new System.IO.IOException("Invalid path: double dot error (before " + i + ")");
 
                         // on level up!
                         int j;

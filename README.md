@@ -2,6 +2,12 @@
 
 Better Streaming Assets is a plugin that lets you access Streaming Assets directly in an uniform and thread-safe way, with tiny overhead. Mostly beneficial for Android projects, where the alternatives are to use archaic and hugely inefficient WWW or embed data in Asset Bundles. API is based on Syste.IO.File and System.IO.Directory classes.
 
+# Note on Android & App Bundles
+
+App Bundles (.aab) builds are bugged when it comes to Streaming Assets. See https://github.com/gwiazdorrr/BetterStreamingAssets/issues/10 for details. The bottom line is:
+
+⚠️ **Keep all file names in Streaming Assets lowercase!** ⚠️
+
 # Usage
 
 Check examples below. Note that all the paths are relative to StreamingAssets directory. That is, if you have files
@@ -48,7 +54,7 @@ Listing all Streaming Assets in with .xml extension:
 
 Checking if a directory exists:
 
-    Debug.Asset( BetterStreamingAssets.DirectoryExists("Config") );
+    Debug.Assert( BetterStreamingAssets.DirectoryExists("Config") );
 
 Ways of reading a file:
 
@@ -59,7 +65,7 @@ Ways of reading a file:
     byte[] footer = new byte[10];
     using (var stream = BetterStreamingAssets.OpenRead("Foo/bar.data"))
     {
-        stream.Seek(footer.Length, SeekOrigin.End);
+        stream.Seek(-footer.Length, SeekOrigin.End);
         stream.Read(footer, 0, footer.Length);
     }
     
@@ -70,4 +76,17 @@ Asset bundles (again, main thread only):
     // async
     var bundleOp = BetterStreamingAssets.LoadAssetBundleAsync(path);
 
- 
+# (Android) False-positive compressed Streaming Assets messages
+
+Streaming Assets end up in the same part of APK as files added by many custom plugins (`assets` directory), so it is impossible to tell whether a compressed file is a Streaming Asset (an indication something has gone terribly wrong) or not. This tool acts conservatively and logs errors whenever it finds a compressed file inside of `assets`, but outside of `assets/bin`. If you are annoyed by this and are certain a compressed file was not meant to be a Streaming Asset, add a file like this in the same assembly as Better Streaming Assets:
+
+    partial class BetterStreamingAssets
+    {
+        static partial void AndroidIsCompressedFileStreamingAsset(string path, ref bool result)
+        {
+            if ( path == "assets/my_custom_plugin_settings.json")
+            {
+                result = false;
+            }
+        }
+    }

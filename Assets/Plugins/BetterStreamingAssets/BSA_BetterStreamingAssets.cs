@@ -19,7 +19,7 @@ using BetterStreamingAssetsImp = BetterStreamingAssets.ApkImpl;
 using BetterStreamingAssetsImp = BetterStreamingAssets.LooseFilesImpl;
 #endif
 
-public static class BetterStreamingAssets
+public static partial class BetterStreamingAssets
 {
     internal struct ReadInfo
     {
@@ -130,7 +130,7 @@ public static class BetterStreamingAssets
         if ( path == null )
             throw new ArgumentNullException("path");
         if ( path.Length == 0 )
-            throw new ArgumentException("Empty path");
+            throw new ArgumentException("Empty path", "path");
 
         return BetterStreamingAssetsImp.ReadAllBytes(path);
     }
@@ -162,6 +162,8 @@ public static class BetterStreamingAssets
     {
         throw new FileNotFoundException("File not found", path);
     }
+
+    static partial void AndroidIsCompressedFileStreamingAsset(string path, ref bool result);
 
 #if UNITY_EDITOR
     internal static class EditorImpl
@@ -235,7 +237,7 @@ public static class BetterStreamingAssets
 
         public static void Initialize(string dataPath, string streamingAssetsPath)
         {
-            s_root = Path.GetFullPath(streamingAssetsPath + "/").Replace("\\", "/"); ;
+            s_root = Path.GetFullPath(streamingAssetsPath).Replace('\\', '/').TrimEnd('/');
         }
 
         public static string[] GetFiles(string path, string searchPattern, SearchOption searchOption)
@@ -244,15 +246,16 @@ public static class BetterStreamingAssets
                 return s_emptyArray;
 
             // this will throw if something is fishy
-            PathUtil.NormalizeRelativePath(path, forceTrailingSlash : true);
+            path = PathUtil.NormalizeRelativePath(path, forceTrailingSlash : true);
 
-            Debug.Assert(s_root.Last() == '\\' || s_root.Last() == '/');
+            Debug.Assert(s_root.Last() != '\\' && s_root.Last() != '/' && path.StartsWith("/"));
+
             var files = Directory.GetFiles(s_root + path, searchPattern ?? "*", searchOption);
 
             for ( int i = 0; i < files.Length; ++i )
             {
                 Debug.Assert(files[i].StartsWith(s_root));
-                files[i] = files[i].Substring(s_root.Length).Replace('\\', '/');
+                files[i] = files[i].Substring(s_root.Length + 1).Replace('\\', '/');
             }
 
 #if UNITY_EDITOR
@@ -346,6 +349,17 @@ public static class BetterStreamingAssets
 
             GetStreamingAssetsInfoFromJar(s_root, paths, parts);
 
+            if (paths.Count == 0 && !Application.isEditor && Path.GetFileName(dataPath) != "base.apk")
+            {
+                // maybe split?
+                var newDataPath = Path.GetDirectoryName(dataPath) + "/base.apk";
+                if (File.Exists(newDataPath))
+                {
+                    s_root = newDataPath;
+                    GetStreamingAssetsInfoFromJar(newDataPath, paths, parts);
+                }
+            }
+
             s_paths = paths.ToArray();
             s_streamingAssets = parts.ToArray();
         }
@@ -377,7 +391,7 @@ public static class BetterStreamingAssets
         public static string[] GetFiles(string path, string searchPattern, SearchOption searchOption)
         {
             if ( path == null )
-                throw new ArgumentException("path");
+                throw new ArgumentNullException("path");
 
             var actualDirPath = PathUtil.NormalizeRelativePath(path, forceTrailingSlash : true);
 
@@ -507,7 +521,7 @@ public static class BetterStreamingAssets
 
             // find first file there
             var index = Array.BinarySearch(s_paths, path, StringComparer.OrdinalIgnoreCase);
-            if ( index > 0 )
+            if ( index >= 0 )
                 return ~index;
 
             // if the end, no such directory exists
@@ -561,12 +575,35 @@ public static class BetterStreamingAssets
                     {
                         if ( header.CompressedSize != header.UncompressedSize )
                         {
+#if UNITY_ASSERTIONS
+                            var fileName = Encoding.UTF8.GetString(header.Filename);
+                            if (fileName.StartsWith(prefix) && !fileName.StartsWith(assetsPrefix))
+                            {
+                                bool isStreamingAsset = true;
+                                AndroidIsCompressedFileStreamingAsset(fileName, ref isStreamingAsset);
+                                if (isStreamingAsset)
+                                {
+                                    Debug.LogAssertionFormat("BetterStreamingAssets: file {0} is where Streaming Assets are put, but is compressed. " +
+                                        "If this is a App Bundle build, see README for a possible workaround. " +
+                                        "If this file is not a Streaming Asset (has been on purpose by hand or by another plug-in), implement " +
+                                        "BetterStreamingAssets.AndroidIsCompressedFileStreamingAsset partial method to prevent this message from appearing again. ",
+                                        fileName);
+                                }
+                            }
+#endif
                             // we only want uncompressed files
                         }
                         else
                         {
                             var fileName = Encoding.UTF8.GetString(header.Filename);
-                            if ( fileName.StartsWith(prefix) )
+                            
+                            if (fileName.EndsWith("/"))
+                            {
+                                // there's some strangeness when it comes to OBB: directories are listed as files
+                                // simply ignoring them should be enough
+                                Debug.Assert(header.UncompressedSize == 0);
+                            }
+                            else if ( fileName.StartsWith(prefix) )
                             {
                                 // ignore normal assets...
                                 if ( fileName.StartsWith(assetsPrefix) )

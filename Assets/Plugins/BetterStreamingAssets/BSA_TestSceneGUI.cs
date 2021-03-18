@@ -9,6 +9,7 @@ using System.IO;
 using UnityEngine.Profiling;
 using System.Collections;
 using Stopwatch = System.Diagnostics.Stopwatch;
+using UnityEngine.Networking;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -47,6 +48,7 @@ namespace Better.StreamingAssets
             BSA = 1 << 0,
             WWW = 1 << 1,
             Direct = 1 << 5,
+            UnityWebRequest = 1 << 6
         }
 
         [Flags]
@@ -64,7 +66,7 @@ namespace Better.StreamingAssets
         private Vector2 m_assetsScroll;
         private Vector2 m_resultsScroll;
 
-        private string[] m_allStreamingAssets;
+        private string[] m_allStreamingAssets = new string[0];
         private List<TestInfo> m_results = new List<TestInfo>();
         private HashSet<string> m_selectedPaths = new HashSet<string>();
 
@@ -165,6 +167,7 @@ namespace Better.StreamingAssets
                     GUILayout.Label("Read modes: ", GUILayout.Width(150.0f));
                     DoReadModeToggle(ReadMode.BSA);
                     DoReadModeToggle(ReadMode.WWW);
+                    DoReadModeToggle(ReadMode.UnityWebRequest);
 #if !UNITY_ANDROID || UNITY_EDITOR
                     DoReadModeToggle(ReadMode.Direct);
 #endif
@@ -265,36 +268,6 @@ namespace Better.StreamingAssets
             }
         }
 
-        private void Test(ReadMode readMode, string path, TestType testType, int attempts)
-        {
-            enabled = false;
-            coroutineHost.StartCoroutine(ErrorCatchingCoroutine(TestHarness(readMode, path, testType, attempts,
-                (duration, bytes, memory, maxMemory, names) =>
-                {
-                    enabled = true;
-                    LogWorkProgress("Retries: " + attempts);
-                    LogWorkProgress("Avg duration: " + duration);
-                    LogWorkProgress("Avg bytes read: " + bytes);
-                    LogWorkProgress("Avg memory peak: " + memory);
-                    LogWorkProgress("Max memory peak: " + maxMemory);
-
-                    if (names != null)
-                    {
-                        LogWorkProgress("Asset names:");
-                        foreach (var name in names)
-                        {
-                            LogWorkProgress("    " + name);
-                        }
-                    }
-                }),
-                ex =>
-                {
-                    enabled = true;
-                    LogWorkProgress(ex.ToString());
-                }
-            ));
-        }
-
         private IEnumerator TestAllCoroutine(IEnumerable<string> paths, int attempts, ReadMode readModes, TestType testTypes, List<TestInfo> results)
         {
             LogWorkProgress("starting...");
@@ -382,7 +355,7 @@ namespace Better.StreamingAssets
         {
             m_status = string.Empty;
 
-            for (;;)
+            for (; ; )
             {
                 bool next = false;
                 try
@@ -408,7 +381,7 @@ namespace Better.StreamingAssets
 
             string[] assetNames = null;
 
-            var streamingAssetsUrl = Path.Combine(StreamingAssetsPath, path).Replace('\\', '/');
+            var streamingAssetsUrl = Path.Combine(StreamingAssetsPath, path.TrimStart('/')).Replace('\\', '/');
 
             long bytesRead = 0;
             long maxMemoryPeak = 0;
@@ -416,7 +389,7 @@ namespace Better.StreamingAssets
 
             for (int i = 0; i < attempts; ++i)
             {
-                WWW www = null;
+                IDisposable toDispose = null;
 
                 yield return Resources.UnloadUnusedAssets();
                 GC.Collect();
@@ -429,8 +402,10 @@ namespace Better.StreamingAssets
 
                 if (readMode == ReadMode.WWW)
                 {
-                    www = new WWW(streamingAssetsUrl);
-
+#pragma warning disable 0618 // Type or member is obsolete
+                    var www = new WWW(streamingAssetsUrl);
+#pragma warning restore 0618 // Type or member is obsolete
+                    toDispose = www;
                     {
                         yield return www;
 
@@ -451,8 +426,6 @@ namespace Better.StreamingAssets
                         }
                         Profiler.EndSample();
                     }
-
-
                 }
                 else if (readMode == ReadMode.BSA)
                 {
@@ -470,7 +443,6 @@ namespace Better.StreamingAssets
                     }
 
                     Profiler.EndSample();
-
                 }
                 else if (readMode == ReadMode.Direct)
                 {
@@ -490,6 +462,32 @@ namespace Better.StreamingAssets
 
                     Profiler.EndSample();
                 }
+                else if (readMode == ReadMode.UnityWebRequest)
+                {
+                    var www = UnityEngine.Networking.UnityWebRequest.Get(streamingAssetsUrl);
+                    toDispose = www;
+#pragma warning disable 0618 // Type or member is obsolete
+                    yield return www.Send();
+#pragma warning restore 0618 // Type or member is obsolete
+
+                    Profiler.BeginSample(testType.ToString());
+
+                    switch (testType)
+                    {
+                        case TestType.CheckIfExists:
+                            if (!string.IsNullOrEmpty(www.error))
+                                throw new System.Exception(www.error);
+                            break;
+                        case TestType.LoadBytes:
+                            bytesRead += (int)www.downloadedBytes;
+                            break;
+
+                        default:
+                            throw new NotSupportedException();
+                    }
+                    Profiler.EndSample();
+                }
+
                 stopwatch.Stop();
 
                 var memoryPeak = Math.Max(0, Profiler.GetTotalAllocatedMemoryLong() - memoryUnityBefore);
@@ -500,8 +498,8 @@ namespace Better.StreamingAssets
 
                 yield return null;
 
-                if (www != null)
-                    www.Dispose();
+                if (toDispose != null)
+                    toDispose.Dispose();
 
                 yield return null;
             }
